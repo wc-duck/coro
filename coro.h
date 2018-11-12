@@ -111,8 +111,7 @@ static inline void* co_args( coro* co );
 #undef co_call
 #undef co_declare_locals
 
-// TODO: remove?
-static inline uint8_t* align_up(uint8_t* ptr, size_t align)
+static inline uint8_t* _co_align_up(uint8_t* ptr, size_t align)
 {
     return (uint8_t*)( ( (uintptr_t)ptr + ( (uintptr_t)align - 1 ) ) & ~( (uintptr_t)align - 1 ) );    
 }
@@ -120,7 +119,7 @@ static inline uint8_t* align_up(uint8_t* ptr, size_t align)
 static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 {
     // does it fit?
-    uint8_t* ptr = align_up(co->stack_top, align);
+    uint8_t* ptr = _co_align_up(co->stack_top, align);
 
     co->stack_top = ptr + size;
 
@@ -131,7 +130,7 @@ static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 
 static inline void _co_stack_rewind(coro* co, void* ptr)
 {
-    // ASSERT(on_stack(co, ptr))
+    CORO_ASSERT(ptr >= co->stack && ptr < co->stack + co->stack_size, "ptr from outside current coro-stack is used for rewind of stack!!!");
     co->stack_top = (uint8_t*)ptr;
 }
 
@@ -186,9 +185,6 @@ static inline void* co_args(coro* co)
     return co->call_args;
 }
 
-/**
- *
- */
 static inline bool _co_sub_call(coro* co)
 {
     if(co->sub_call != nullptr)
@@ -244,7 +240,7 @@ static inline bool _co_call(coro* co, co_func to_call)
     {                                                          \
         locals                                                 \
     };                                                         \
-    _co_locals& CORO_LOCALS_NAME = *(_co_locals*)align_up(co->stack, alignof(_co_locals)); \
+    _co_locals& CORO_LOCALS_NAME = *(_co_locals*)_co_align_up(co->stack, alignof(_co_locals)); \
     if(co->run_state == CORO_STATE_CREATED)                    \
     {                                                          \
         _co_stack_alloc(co, sizeof(_co_locals), alignof(_co_locals)); \
