@@ -156,8 +156,8 @@ static inline void co_init( coro*    co,
 
     if(arg)
     {
-        co->call_args = _co_stack_alloc(co, arg_size, arg_align);
-        memcpy(co->call_args, arg, arg_size);
+        co->call_args = _co_stack_alloc(co, (size_t)arg_size, (size_t)arg_align);
+        memcpy(co->call_args, arg, (size_t)arg_size);
     }
 }
 
@@ -172,7 +172,7 @@ static inline void co_init( coro*    co,
 template<typename T>
 static inline void co_init( coro* co, uint8_t* stack, int stack_size, co_func func, T& arg )
 {
-    co_init( co, stack, stack_size, func, &arg, sizeof(arg), alignof(arg) );
+    co_init( co, stack, stack_size, func, &arg, sizeof(T), alignof(T) );
 }
 
 static inline void co_resume(coro* co)
@@ -235,13 +235,8 @@ static inline bool _co_call(coro* co, co_func to_call)
    return _co_call(co, to_call, nullptr, 0, 0);
 }
 
-#define co_call(co, to_call) \
-    if(_co_call(co, to_call)) \
-        { co_yield(co); }
-
-// TODO: change to __VA_ARGS__
-#define co_call_arg(co, to_call, arg, arg_size, arg_align) \
-    if(_co_call(co, to_call, arg, arg_size, arg_align)) \
+#define co_call(co, to_call, ...) \
+    if(_co_call(co, to_call, ##__VA_ARGS__)) \
         { co_yield(co); }
 
 #define co_declare_locals(co, locals)                          \

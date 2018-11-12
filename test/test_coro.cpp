@@ -136,7 +136,7 @@ TEST coro_with_args()
         *arg->output = arg->input;
 
         co_end(co);
-    }, &a, sizeof(a), alignof(a));
+    }, &a, sizeof(args), alignof(args));
 
     co_resume(&co);
     ASSERT(co_completed(&co));
@@ -163,7 +163,7 @@ TEST coro_with_args_in_subcall()
         for(; locals.cnt < 2; ++locals.cnt)
         {
             ++coro_sub_call_loop;
-            co_call_arg(co, [](coro* co){
+            co_call(co, [](coro* co){
                 int* arg = (int*)co_args(co);
 
                 co_begin(co);
@@ -171,7 +171,7 @@ TEST coro_with_args_in_subcall()
                 coro_with_args_in_subcall_sum += *arg + 10;
 
                 co_end(co);
-            }, &locals.cnt, sizeof(locals.cnt), alignof(locals.cnt));
+            }, &locals.cnt, sizeof(int), alignof(int));
         }
 
         co_end(co);
