@@ -43,22 +43,42 @@ struct coro
     uint8_t*   stack        {nullptr};
 
     coro*      sub_call     {nullptr};
+    void*      call_args    {nullptr};
 };
 
 /**
  * 
  */
-static inline void co_init(coro* co, co_func func, uint8_t* stack, int stack_size);
+static inline void co_init( coro*     co,
+                            uint8_t*  stack,
+                            int       stack_size,
+                            co_func   func );
+
+/**
+ *
+ */
+static inline void co_init( coro*     co,
+                            uint8_t*  stack,
+                            int       stack_size,
+                            co_func   func,
+                            void*     arg,
+                            int       arg_size,
+                            int       arg_align );
 
 /**
  * 
  */
-static inline void co_resume(coro* co);
+static inline void co_resume( coro* co );
 
 /**
  * 
  */
-static inline bool co_completed(coro* co) { return co->run_state == CORO_STATE_COMPLETED; }
+static inline bool co_completed( coro* co ) { return co->run_state == CORO_STATE_COMPLETED; }
+
+/**
+ * 
+ */
+static inline void* co_args( coro* co );
 
 /**
  *
@@ -91,33 +111,12 @@ static inline bool co_completed(coro* co) { return co->run_state == CORO_STATE_C
 #undef co_call
 #undef co_declare_locals
 
-static inline void co_init(coro* co, co_func func, uint8_t* stack, int stack_size)
-{
-    co->func = func;
-    co->state = 0;
-    co->run_state = CORO_STATE_CREATED;
-
-    co->stack      = stack;
-    co->stack_top  = stack;
-    co->stack_size = stack_size;
-
-    co->sub_call = nullptr;
-}
-
-static inline void co_resume(coro* co)
-{
-    co->func(co);
-}
-
 // TODO: remove?
 static inline uint8_t* align_up(uint8_t* ptr, size_t align)
 {
     return (uint8_t*)( ( (uintptr_t)ptr + ( (uintptr_t)align - 1 ) ) & ~( (uintptr_t)align - 1 ) );    
 }
 
-/**
- * 
- */
 static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 {
     // does it fit?
@@ -130,13 +129,61 @@ static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
     return ptr;
 }
 
-/**
- * 
- */
 static inline void _co_stack_rewind(coro* co, void* ptr)
 {
     // ASSERT(on_stack(co, ptr))
     co->stack_top = (uint8_t*)ptr;
+}
+
+static inline void co_init( coro*    co,
+                            uint8_t* stack,
+                            int      stack_size,
+                            co_func  func,
+                            void*    arg,
+                            int      arg_size,
+                            int      arg_align )
+{
+    co->func      = func;
+    co->state     = 0;
+    co->run_state = CORO_STATE_CREATED;
+
+    co->stack      = stack;
+    co->stack_top  = stack;
+    co->stack_size = stack_size;
+
+    co->sub_call   = nullptr;
+    co->call_args  = nullptr;
+
+    if(arg)
+    {
+        co->call_args = _co_stack_alloc(co, arg_size, arg_align);
+        memcpy(co->call_args, arg, arg_size);
+    }
+}
+
+static inline void co_init( coro*    co,
+                            uint8_t* stack,
+                            int      stack_size,
+                            co_func  func )
+{
+    co_init( co, stack, stack_size, func, nullptr, 0, 0 );
+}
+
+template<typename T>
+static inline void co_init( coro* co, uint8_t* stack, int stack_size, co_func func, T& arg )
+{
+    co_init( co, stack, stack_size, func, &arg, sizeof(arg), alignof(arg) );
+}
+
+static inline void co_resume(coro* co)
+{
+    co->func(co);
+}
+
+static inline void* co_args(coro* co)
+{
+    CORO_ASSERT(co->call_args != nullptr, "requesting args in a coro called without args!");
+    return co->call_args;
 }
 
 /**
@@ -176,15 +223,25 @@ static inline bool _co_sub_call(coro* co)
  */
 #define co_wait()
 
-static inline bool _co_call(coro* co, co_func to_call)
+static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {
     co->sub_call = (coro*)_co_stack_alloc(co, sizeof(coro), alignof(coro));
-    co_init(co->sub_call, to_call, co->stack_top, (int)(co->stack_size - (co->stack_top - co->stack)));
+    co_init(co->sub_call, co->stack_top, (int)(co->stack_size - (co->stack_top - co->stack)), to_call, arg, arg_size, arg_align);
     return _co_sub_call(co);
+}
+
+static inline bool _co_call(coro* co, co_func to_call)
+{
+   return _co_call(co, to_call, nullptr, 0, 0);
 }
 
 #define co_call(co, to_call) \
     if(_co_call(co, to_call)) \
+        { co_yield(co); }
+
+// TODO: change to __VA_ARGS__
+#define co_call_arg(co, to_call, arg, arg_size, arg_align) \
+    if(_co_call(co, to_call, arg, arg_size, arg_align)) \
         { co_yield(co); }
 
 #define co_declare_locals(co, locals)                          \
