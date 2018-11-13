@@ -1,8 +1,12 @@
 --[[
-   DOC ME HERE ASWELL!.
-   version 0.1, march, 2012
+   Header implementing "protothreads" but with a stack to support
+   local-varible state, argument-passing and sub-coroutines.
 
-   Copyright (C) 2012- Fredrik Kihlander
+   version 1.0, november, 2018
+
+   Copyright (C) 2018- Fredrik Kihlander
+
+   https://github.com/wc-duck/coro
 
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
