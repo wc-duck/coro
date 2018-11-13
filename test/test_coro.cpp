@@ -129,7 +129,7 @@ TEST coro_with_args()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co) {
-        args* arg = (args*)co_args(co);
+        args* arg = (args*)co_arg(co);
 
         co_begin(co);
 
@@ -164,7 +164,7 @@ TEST coro_with_args_in_subcall()
         {
             ++coro_sub_call_loop;
             co_call(co, [](coro* co){
-                int* arg = (int*)co_args(co);
+                int* arg = (int*)co_arg(co);
 
                 co_begin(co);
 

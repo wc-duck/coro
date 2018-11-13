@@ -91,22 +91,22 @@ struct coro
  * @param arg_size size of data pointed to by arg.
  * @param arg_align alignment-requirement for data pointed to by arg.
  */
-static inline void co_init( coro*     co,
-                            uint8_t*  stack,
-                            int       stack_size,
-                            co_func   func,
-                            void*     arg,
-                            int       arg_size,
-                            int       arg_align );
+static inline void co_init( coro*   co,
+                            void*   stack,
+                            int     stack_size,
+                            co_func func,
+                            void*   arg,
+                            int     arg_size,
+                            int     arg_align );
 
 /**
  * Initialize coroutine without argument.
  * @see co_init() for doc.
  */
-static inline void co_init( coro*     co,
-                            uint8_t*  stack,
-                            int       stack_size,
-                            co_func   func );
+static inline void co_init( coro*   co,
+                            void*   stack,
+                            int     stack_size,
+                            co_func func );
 
 /**
  * Resume execution of coroutine, this will run the coroutine until it yields or
@@ -245,20 +245,20 @@ static inline void _co_stack_rewind(coro* co, void* ptr)
     co->stack_top = (uint8_t*)ptr;
 }
 
-static inline void co_init( coro*    co,
-                            uint8_t* stack,
-                            int      stack_size,
-                            co_func  func,
-                            void*    arg,
-                            int      arg_size,
-                            int      arg_align )
+static inline void co_init( coro*   co,
+                            void*   stack,
+                            int     stack_size,
+                            co_func func,
+                            void*   arg,
+                            int     arg_size,
+                            int     arg_align )
 {
     co->func      = func;
     co->state     = 0;
     co->run_state = CORO_STATE_CREATED;
 
-    co->stack      = stack;
-    co->stack_top  = stack;
+    co->stack      = (uint8_t*)stack;
+    co->stack_top  = (uint8_t*)stack;
     co->stack_size = stack_size;
 
     co->sub_call   = nullptr;
@@ -272,16 +272,16 @@ static inline void co_init( coro*    co,
     }
 }
 
-static inline void co_init( coro*    co,
-                            uint8_t* stack,
-                            int      stack_size,
-                            co_func  func )
+static inline void co_init( coro*   co,
+                            void*   stack,
+                            int     stack_size,
+                            co_func func )
 {
     co_init( co, stack, stack_size, func, nullptr, 0, 0 );
 }
 
 template<typename T>
-static inline void co_init( coro* co, uint8_t* stack, int stack_size, co_func func, T& arg )
+static inline void co_init( coro* co, void* stack, int stack_size, co_func func, T& arg )
 {
     co_init( co, stack, stack_size, func, &arg, sizeof(T), alignof(T) );
 }
