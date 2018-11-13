@@ -109,6 +109,13 @@ static inline void co_init( coro*   co,
                             co_func func );
 
 /**
+ * Initialize coroutine with argument.
+ * @see co_init() for doc.
+ */
+template<typename T>
+static inline void co_init( coro* co, void* stack, int stack_size, co_func func, T& arg );
+
+/**
  * Resume execution of coroutine, this will run the coroutine until it yields or
  * exits.
  * 
