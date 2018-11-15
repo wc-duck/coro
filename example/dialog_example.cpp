@@ -61,10 +61,12 @@ void print_line(coro* co, const char** args)
     const char* line = *args;
 
     co_declare_locals(co,
-        int curr_char = 0;
+        int curr_char = 8;
     );
 
     co_begin(co);
+
+    printf("%.8s", line);
 
     while(line[locals.curr_char] != '\0')
     {
@@ -73,6 +75,7 @@ void print_line(coro* co, const char** args)
         sleep_time = 30 + rand() % 150;
         co_wait(co);
     }
+    print_char('\n');
     co_end(co);
 }
 
@@ -106,12 +109,15 @@ int main(int, const char**)
     uint8_t* stack[512];
 
     static const char* LINES[] = {
-        "hej\n",
-        "hopp\n",
-        "hejaua a ao ua a uao \n",
-        "hop aoeua oaoea auo  aep\n",
-        "heoaeu ao u aeu aouaoj\n",
-        "hop aoua ua ouao up\n",
+            "Bob     Yo alice. I heard you like mudkips.",
+			"Alice   No Bob. Not me. Who told you such a thing?",
+			"Bob     Alice please, don't lie to me. We've known each other a long time.",
+			"Alice   We have grown apart. I barely know myself.",
+			"Bob     OK.",
+			"Alice   Good bye Bob. I wish you the best.",
+			"Bob     But do you like mudkips?",
+			"Alice   <has left>",
+			"Bob     Well, I like mudkips :)"
     };
 
     print_dialog_arg dialog_args {
