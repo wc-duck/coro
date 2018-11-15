@@ -75,11 +75,10 @@ typedef void(*co_func)(struct coro*, void* arg);
 /**
  * State of coroutine.
  */
-enum coro_state
+enum
 {
-    CORO_STATE_CREATED,   ///< Coroutine has been initialized but has never been co_resumed().
-    CORO_STATE_RUNNING,   ///< Coroutine is running.
-    CORO_STATE_COMPLETED  ///< Coroutine has completed, calling co_resume() on this is invalid!
+    CORO_STATE_CREATED   = -1, ///< Coroutine has been initialized but has never been co_resumed().
+    CORO_STATE_COMPLETED = -2  ///< Coroutine has completed, calling co_resume() on this is invalid!
 };
 
 /**
@@ -88,8 +87,8 @@ enum coro_state
 struct coro
 {
     co_func    func         {nullptr};
-    int        state        {0};
-    coro_state run_state    {CORO_STATE_CREATED};
+    int32_t    state   : 30;
+    int32_t    waiting : 2;
 
     int        stack_size   {0};
     uint8_t*   stack_top    {nullptr};
@@ -157,7 +156,12 @@ static inline void co_resume( coro* co );
 /**
  * Returns true if the coroutine has completed.
  */
-static inline bool co_completed( coro* co ) { return co->run_state == CORO_STATE_COMPLETED; }
+static inline bool co_completed( coro* co ) { return co->state == CORO_STATE_COMPLETED; }
+
+/**
+ * Returns true if the coroutine or any sub-coroutine has yielded via co_wait()
+ */
+static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 
 /**
  * Begin coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
@@ -273,9 +277,9 @@ static inline void co_init( coro*   co,
                             int     arg_size,
                             int     arg_align )
 {
-    co->func      = func;
-    co->state     = 0;
-    co->run_state = CORO_STATE_CREATED;
+    co->func       = func;
+    co->state      = 0;
+    co->waiting    = 0;
 
     co->stack      = (uint8_t*)stack;
     co->stack_top  = (uint8_t*)stack;
@@ -318,6 +322,8 @@ static inline bool _co_sub_call(coro* co)
     if(co->sub_call != nullptr)
     {
         co_resume(co->sub_call);
+        co->waiting = co->sub_call->waiting;
+
         if(co_completed(co->sub_call))
         {
             _co_stack_rewind(co, co->sub_call);
@@ -327,22 +333,24 @@ static inline bool _co_sub_call(coro* co)
     return co->sub_call != nullptr;
 }
 
-#define co_begin(co)    \
+#define co_begin(co)     \
     if(_co_sub_call(co)) \
-        return;         \
-    switch(co->state)   \
-    {                   \
-        default:        \
-            co->run_state = CORO_STATE_RUNNING;
+        return;          \
+    switch(co->state)    \
+    {                    \
+        default:
 
 #define co_end(co) \
     }              \
-    co->run_state = CORO_STATE_COMPLETED
+    co->state = CORO_STATE_COMPLETED
 
 #define co_yield(co) \
     do{ co->state = __LINE__; return; } while(0); case __LINE__:
 
-#define co_wait(co)
+#define co_wait(co) \
+    co->waiting = 1; \
+    co_yield(co);    \
+    co->waiting = 0;
 
 static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {
@@ -366,14 +374,20 @@ static inline bool _co_call(coro* co, co_func to_call)
     if(_co_call(co, to_call, ##__VA_ARGS__)) \
         { co_yield(co); }
 
-#define co_declare_locals(co, locals)                          \
-    struct _co_locals                                          \
-    {                                                          \
-        locals                                                 \
-    };                                                         \
-    if(co->call_locals == nullptr)                    \
-    {                                                          \
-        co->call_locals = _co_stack_alloc(co, sizeof(_co_locals), alignof(_co_locals)); \
-        new (co->call_locals) _co_locals;                          \
-    } \
-    _co_locals& CORO_LOCALS_NAME = *(_co_locals*)co->call_locals;
+template< typename T >
+static inline T* _co_declare_locals(coro* co)
+{
+    if(co->call_locals == nullptr)
+    {
+        co->call_locals = _co_stack_alloc(co, sizeof(T), alignof(T));
+        new (co->call_locals) T;
+    }
+    return (T*)co->call_locals;
+}
+
+#define co_declare_locals(co, locals) \
+    struct _co_locals                 \
+    {                                 \
+        locals                        \
+    };                                \
+    _co_locals& CORO_LOCALS_NAME = *_co_declare_locals<_co_locals>(co);
