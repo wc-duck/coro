@@ -36,6 +36,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h> // memcpy
 #include <new>
 
 
@@ -95,6 +96,7 @@ struct coro
     uint8_t*   stack        {nullptr};
 
     coro*      sub_call     {nullptr};
+    void*      call_locals  {nullptr};
     void*      call_args    {nullptr};
 };
 
@@ -255,14 +257,10 @@ static inline void* co_arg( coro* co );
 #undef co_call
 #undef co_declare_locals
 
-static inline uint8_t* _co_align_up(uint8_t* ptr, size_t align)
-{
-    return (uint8_t*)( ( (uintptr_t)ptr + ( (uintptr_t)align - 1 ) ) & ~( (uintptr_t)align - 1 ) );    
-}
-
 static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 {
-    uint8_t* ptr = _co_align_up(co->stack_top, align);
+    // align up!
+    uint8_t* ptr = (uint8_t*)( ( (uintptr_t)co->stack_top + ( (uintptr_t)align - 1 ) ) & ~( (uintptr_t)align - 1 ) );
 
     co->stack_top = ptr + size;
 
@@ -293,8 +291,9 @@ static inline void co_init( coro*   co,
     co->stack_top  = (uint8_t*)stack;
     co->stack_size = stack_size;
 
-    co->sub_call   = nullptr;
-    co->call_args  = nullptr;
+    co->sub_call    = nullptr;
+    co->call_locals = nullptr;
+    co->call_args   = nullptr;
 
     if(arg)
     {
@@ -371,9 +370,7 @@ static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, 
 template< typename T >
 static inline bool _co_call(coro* co, co_func to_call, T& arg )
 {
-    co->sub_call = (coro*)_co_stack_alloc(co, sizeof(coro), alignof(coro));
-    co_init(co->sub_call, co->stack_top, (int)(co->stack_size - (co->stack_top - co->stack)), to_call, &arg, sizeof(T), alignof(T));
-    return _co_sub_call(co);
+    return _co_call(co, to_call, &arg, sizeof(T), alignof(T));
 }
 
 static inline bool _co_call(coro* co, co_func to_call)
@@ -390,9 +387,9 @@ static inline bool _co_call(coro* co, co_func to_call)
     {                                                          \
         locals                                                 \
     };                                                         \
-    _co_locals& CORO_LOCALS_NAME = *(_co_locals*)_co_align_up(co->stack, alignof(_co_locals)); \
-    if(co->run_state == CORO_STATE_CREATED)                    \
+    if(co->call_locals == nullptr)                    \
     {                                                          \
-        _co_stack_alloc(co, sizeof(_co_locals), alignof(_co_locals)); \
-        new (&CORO_LOCALS_NAME) _co_locals;                          \
-    }
+        co->call_locals = _co_stack_alloc(co, sizeof(_co_locals), alignof(_co_locals)); \
+        new (co->call_locals) _co_locals;                          \
+    } \
+    _co_locals& CORO_LOCALS_NAME = *(_co_locals*)co->call_locals;
