@@ -70,7 +70,7 @@
 /**
  * Signature used by all coroutine-callbacks.
  */
-typedef void(*co_func)(struct coro*);
+typedef void(*co_func)(struct coro*, void* arg);
 
 /**
  * State of coroutine.
@@ -114,7 +114,7 @@ struct coro
  * @param stack ptr to memory-segment to use as stack, can be null.
  * @param stack_size size of memory-region pointed to by stack, if stack == null this should be 0.
  * @param func coroutine callback.
- * @param arg optional pointer to argument to pass to coroutine, fetch in callback with co_arg().
+ * @param arg optional pointer to argument to pass to coroutine as the second argument in callback.
  * @param arg_size size of data pointed to by arg.
  * @param arg_align alignment-requirement for data pointed to by arg.
  */
@@ -160,19 +160,9 @@ static inline void co_resume( coro* co );
 static inline bool co_completed( coro* co ) { return co->run_state == CORO_STATE_COMPLETED; }
 
 /**
- * Returns a pointer to arguments passed to co_init(). This pointer will need to be fetched
- * at each invocation of the coroutine-callback but will be persistent between co_resume()-calls.
- * I.e. it is valid to modify an argument in a coroutine and expect that modification to persist
- * between calls.
- * 
- * @note It is required to call this BEFORE co_begin().
- */
-static inline void* co_arg( coro* co );
-
-/**
  * Begin coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
  * 
- * @note if a co_func uses co_arg() or co_declare_locals() these are required to be called BEFORE
+ * @note if a co_func uses co_declare_locals() this is required to be called BEFORE
  *       co_begin().
  */
 #define co_begin(co)
@@ -320,13 +310,7 @@ static inline void co_init( coro* co, void* stack, int stack_size, co_func func,
 static inline void co_resume(coro* co)
 {
     CORO_ASSERT(!co_completed(co), "can't resume a completed coroutine!");
-    co->func(co);
-}
-
-static inline void* co_arg(coro* co)
-{
-    CORO_ASSERT(co->call_args != nullptr, "requesting args in a coro called without args!");
-    return co->call_args;
+    co->func(co, co->call_args);
 }
 
 static inline bool _co_sub_call(coro* co)

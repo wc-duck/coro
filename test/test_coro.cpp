@@ -35,7 +35,7 @@ TEST coro_basic()
 {
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co) {
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*) {
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -67,7 +67,7 @@ TEST coro_basic()
 TEST coro_no_stack()
 {
     coro co;
-    co_init(&co, nullptr, 0, [](coro* co) {
+    co_init(&co, nullptr, 0, [](coro* co, void*) {
         static int cnt = 0;
         co_begin(co);
 
@@ -103,7 +103,7 @@ TEST coro_sub_call()
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co){
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*){
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -112,7 +112,7 @@ TEST coro_sub_call()
         for(; locals.cnt < 2; ++locals.cnt)
         {
             ++coro_sub_call_loop;
-            co_call(co, [](coro* co){
+            co_call(co, [](coro* co, void*){
                 co_declare_locals(co,
                     unsigned int cnt = 0;
                 );
@@ -157,8 +157,8 @@ TEST coro_with_args()
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co) {
-        args* arg = (args*)co_arg(co);
+    co_init(&co, stack, sizeof(stack), [](coro* co, void* co_args) {
+        args* arg = (args*)co_args;
 
         co_begin(co);
 
@@ -183,7 +183,7 @@ TEST coro_with_args_in_subcall()
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co) {
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*) {
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -192,8 +192,8 @@ TEST coro_with_args_in_subcall()
         for(; locals.cnt < 2; ++locals.cnt)
         {
             ++coro_sub_call_loop;
-            co_call(co, [](coro* co){
-                int* arg = (int*)co_arg(co);
+            co_call(co, [](coro* co, void* args){
+                int* arg = (int*)args;
 
                 co_begin(co);
 
@@ -213,6 +213,8 @@ TEST coro_with_args_in_subcall()
 
     return 0;
 }
+
+// TODO: add test fetching args before declaring locals!!!
 
 GREATEST_SUITE( coro_tests )
 {
