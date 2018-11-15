@@ -118,6 +118,14 @@ settings.link.Output = output_func
 settings.link.libpath:Add( 'local/' .. config .. '/' .. platform )
 local tests = Link( settings, 'coro_tests', Compile( settings, 'test/test_coro.cpp' ) )
 
+-- examples
+local examples = {}
+for _, file in ipairs(Collect( "example/*.cpp" )) do
+    local name = PathFilename(PathBase(file))
+    local exe  = Link( settings, name, Compile( settings, file ) )
+    table.insert( examples, exe )
+end
+
 test_args = " -v"
 if ScriptArgs["test"]     then test_args = test_args .. " -t " .. ScriptArgs["test"] end
 if ScriptArgs["suite"]    then test_args = test_args .. " -s " .. ScriptArgs["suite"] end
@@ -129,6 +137,7 @@ else
 	AddJob( "valgrind", "valgrind",  "valgrind -v --leak-check=full --track-origins=yes " .. tests .. test_args, tests, tests )
 end
 
+PseudoTarget( "examples", examples )
 PseudoTarget( "all", tests )
 DefaultTarget( "all" )
 
