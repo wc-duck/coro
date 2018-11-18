@@ -62,6 +62,15 @@
 #  define CORO_ASSERT(cond, msg) assert((cond) && msg);
 #endif
 
+/**
+ * If defined to 1 struct coro will have an extra member called stack_use_max
+ * that will be the maximum amount of stack that has been used by the coro during
+ * it's lifetime, default to 0
+ */
+#if !defined(CORO_TRACK_MAX_STACK_USAGE)
+#  define CORO_TRACK_MAX_STACK_USAGE 0
+#endif
+
 
 ////////////////////////////////////////////////////////////////
 //                         PUBLIC API                         //
@@ -103,6 +112,10 @@ struct coro
     void*      call_locals  {nullptr};
     void*      call_args    {nullptr};
     void*      userdata     {nullptr};
+
+#if CORO_TRACK_MAX_STACK_USAGE
+    int        stack_use_max {0};
+#endif
 };
 
 /**
@@ -268,6 +281,11 @@ static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 
     CORO_ASSERT(co->stack_top <= co->stack + co->stack_size, "Stack overflow in coro!");
 
+#if CORO_TRACK_MAX_STACK_USAGE
+    int stack_use = (int)(co->stack_top - co->stack);
+    co->stack_use_max = stack_use > co->stack_use_max ? stack_use : co->stack_use_max;
+#endif
+
     return ptr;
 }
 
@@ -298,6 +316,10 @@ static inline void co_init( coro*   co,
     co->call_args   = nullptr;
     co->userdata    = nullptr;
 
+#if CORO_TRACK_MAX_STACK_USAGE
+    co->stack_use_max = 0;
+#endif
+
     if(arg)
     {
         CORO_ASSERT(stack != nullptr, "can't have arguments to a coroutine without a stack!");
@@ -323,6 +345,7 @@ static inline void co_init( coro* co, void* stack, int stack_size, co_func func,
 static inline void co_resume(coro* co, void* userdata)
 {
     CORO_ASSERT(!co_completed(co), "can't resume a completed coroutine!");
+    co->waiting = 0;
     co->userdata = userdata;
     co->func(co, co->userdata, co->call_args);
     co->userdata = nullptr;
@@ -360,8 +383,7 @@ static inline bool _co_sub_call(coro* co)
 
 #define co_wait(co) \
     co->waiting = 1; \
-    co_yield(co);    \
-    co->waiting = 0;
+    co_yield(co);
 
 static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {

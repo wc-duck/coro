@@ -27,6 +27,8 @@
    Fredrik Kihlander
 */
 
+#define CORO_TRACK_MAX_STACK_USAGE 0
+
 #include "greatest.h"
 #include "../coro.h"
 
@@ -60,6 +62,10 @@ TEST coro_basic()
 
     ASSERT(co_completed(&co));
 
+#if CORO_TRACK_MAX_STACK_USAGE
+    printf("max stack %d\n", co.stack_use_max);
+#endif
+
 	return 0;
 }
 
@@ -89,6 +95,10 @@ TEST coro_no_stack()
     co_resume(&co, nullptr);
 
     ASSERT(co_completed(&co));
+
+#if CORO_TRACK_MAX_STACK_USAGE
+    printf("max stack %d\n", co.stack_use_max);
+#endif
 
 	return 0;
 }
@@ -138,6 +148,10 @@ TEST coro_sub_call()
     ASSERT_EQ(2, state.coro_sub_call_loop);
     ASSERT_EQ(4, state.coro_sub_call_sub_loop);
 
+#if CORO_TRACK_MAX_STACK_USAGE
+    printf("max stack %d\n", co.stack_use_max);
+#endif
+
     return 0;
 }
 
@@ -171,6 +185,10 @@ TEST coro_with_args()
     ASSERT(co_completed(&co));
 
     ASSERT_EQ(1337, output);
+
+#if CORO_TRACK_MAX_STACK_USAGE
+    printf("max stack %d\n", co.stack_use_max);
+#endif
 
     return 0;
 }
@@ -207,6 +225,10 @@ TEST coro_with_args_in_subcall()
     ASSERT(co_completed(&co));
 
     ASSERT_EQ(21, coro_with_args_in_subcall_sum);
+
+#if CORO_TRACK_MAX_STACK_USAGE
+    printf("max stack %d\n", co.stack_use_max);
+#endif
 
     return 0;
 }
