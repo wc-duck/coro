@@ -35,7 +35,7 @@ TEST coro_basic()
 {
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co, void*) {
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -50,13 +50,13 @@ TEST coro_basic()
     });
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT(co_completed(&co));
 
@@ -67,7 +67,7 @@ TEST coro_basic()
 TEST coro_no_stack()
 {
     coro co;
-    co_init(&co, nullptr, 0, [](coro* co, void*) {
+    co_init(&co, nullptr, 0, [](coro* co, void*, void*) {
         static int cnt = 0;
         co_begin(co);
 
@@ -80,30 +80,30 @@ TEST coro_no_stack()
     });
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT_FALSE(co_completed(&co));
-    co_resume(&co);
+    co_resume(&co, nullptr);
 
     ASSERT(co_completed(&co));
 
 	return 0;
 }
 
-int coro_sub_call_sub_loop = 0;
-int coro_sub_call_loop = 0;
-
 TEST coro_sub_call()
 {
-    coro_sub_call_sub_loop = 0;
-    coro_sub_call_loop = 0;
+    struct test_state
+    {
+        int coro_sub_call_sub_loop = 0;
+        int coro_sub_call_loop = 0;
+    } state;
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co, void*){
+    co_init(&co, stack, sizeof(stack), [](coro* co, void* userdata, void*){
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -111,8 +111,8 @@ TEST coro_sub_call()
 
         for(; locals.cnt < 2; ++locals.cnt)
         {
-            ++coro_sub_call_loop;
-            co_call(co, [](coro* co, void*){
+            ++((test_state*)userdata)->coro_sub_call_loop;
+            co_call(co, [](coro* co, void* userdata, void*){
                 co_declare_locals(co,
                     unsigned int cnt = 0;
                 );
@@ -121,7 +121,7 @@ TEST coro_sub_call()
 
                 for(; locals.cnt < 2; ++locals.cnt)
                 {
-                    ++coro_sub_call_sub_loop;
+                    ++((test_state*)userdata)->coro_sub_call_sub_loop;
                     co_yield(co);
                 }
 
@@ -133,10 +133,10 @@ TEST coro_sub_call()
     });
 
     while(!co_completed(&co))
-        co_resume(&co);
+        co_resume(&co, &state);
 
-    ASSERT_EQ(2, coro_sub_call_loop);
-    ASSERT_EQ(4, coro_sub_call_sub_loop);
+    ASSERT_EQ(2, state.coro_sub_call_loop);
+    ASSERT_EQ(4, state.coro_sub_call_sub_loop);
 
     return 0;
 }
@@ -157,7 +157,7 @@ TEST coro_with_args()
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co, void* co_args) {
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*, void* co_args) {
         args* arg = (args*)co_args;
 
         co_begin(co);
@@ -167,7 +167,7 @@ TEST coro_with_args()
         co_end(co);
     }, &a, sizeof(args), alignof(args));
 
-    co_resume(&co);
+    co_resume(&co, nullptr);
     ASSERT(co_completed(&co));
 
     ASSERT_EQ(1337, output);
@@ -175,15 +175,13 @@ TEST coro_with_args()
     return 0;
 }
 
-int coro_with_args_in_subcall_sum = 0;
-
 TEST coro_with_args_in_subcall()
 {
-    coro_with_args_in_subcall_sum = 0;
+    int coro_with_args_in_subcall_sum = 0;
 
     uint8_t stack[1024];
     coro co;
-    co_init(&co, stack, sizeof(stack), [](coro* co, void*) {
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
         co_declare_locals(co,
             int cnt = 0;
         );
@@ -191,13 +189,12 @@ TEST coro_with_args_in_subcall()
 
         for(; locals.cnt < 2; ++locals.cnt)
         {
-            ++coro_sub_call_loop;
-            co_call(co, [](coro* co, void* args){
+            co_call(co, [](coro* co, void* userdata, void* args){
                 int* arg = (int*)args;
 
                 co_begin(co);
 
-                coro_with_args_in_subcall_sum += *arg + 10;
+                *((int*)userdata) += *arg + 10;
 
                 co_end(co);
             }, &locals.cnt, sizeof(int), alignof(int));
@@ -206,7 +203,7 @@ TEST coro_with_args_in_subcall()
         co_end(co);
     });
 
-    co_resume(&co);
+    co_resume(&co, &coro_with_args_in_subcall_sum);
     ASSERT(co_completed(&co));
 
     ASSERT_EQ(21, coro_with_args_in_subcall_sum);

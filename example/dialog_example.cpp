@@ -56,7 +56,7 @@ static void print_char(char c)
 
 static unsigned int sleep_time = 0;
 
-void print_line(coro* co, const char** args)
+void print_line(coro* co, void*, const char** args)
 {
     const char* line = *args;
 
@@ -85,7 +85,7 @@ struct print_dialog_arg
     size_t       line_cnt;
 };
 
-void print_dialog(coro* co, print_dialog_arg* args)
+void print_dialog(coro* co, void*, print_dialog_arg* args)
 {
     co_declare_locals(co,
         size_t curr_line = 0;
@@ -130,7 +130,7 @@ int main(int, const char**)
 
     while(!co_completed(&co))
     {
-        co_resume(&co);
+        co_resume(&co, nullptr);
 
         if(co_waiting(&co))
             sleep_ms(sleep_time);

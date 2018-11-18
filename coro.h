@@ -69,8 +69,13 @@
 
 /**
  * Signature used by all coroutine-callbacks.
+ * 
+ * @param co state of current coroutine call, use with all other co_**** functions/macros.
+ * @param userdata passed to co_resume() at the top-level.
+ * @param arg argument passed to co_init() or co_call(), data will be preserved between calls
+ *            and can thus be modified etc. Will be nullptr if no argument was passed.
  */
-typedef void(*co_func)(struct coro*, void* arg);
+typedef void(*co_func)(struct coro* co, void* userdata, void* arg);
 
 /**
  * State of coroutine.
@@ -97,6 +102,7 @@ struct coro
     coro*      sub_call     {nullptr};
     void*      call_locals  {nullptr};
     void*      call_args    {nullptr};
+    void*      userdata     {nullptr};
 };
 
 /**
@@ -149,8 +155,10 @@ static inline void co_init( coro* co, void* stack, int stack_size, co_func func,
  * does not return on its first co_resume().
  * 
  * @note it is invalid to call co_resume() on a completed coroutine.
+ * 
+ * @param userdata passed to all invocation of co_func in coro.
  */
-static inline void co_resume( coro* co );
+static inline void co_resume( coro* co, void* userdata );
 
 
 /**
@@ -288,6 +296,7 @@ static inline void co_init( coro*   co,
     co->sub_call    = nullptr;
     co->call_locals = nullptr;
     co->call_args   = nullptr;
+    co->userdata    = nullptr;
 
     if(arg)
     {
@@ -311,17 +320,19 @@ static inline void co_init( coro* co, void* stack, int stack_size, co_func func,
     co_init( co, stack, stack_size, func, &arg, sizeof(T), alignof(T) );
 }
 
-static inline void co_resume(coro* co)
+static inline void co_resume(coro* co, void* userdata)
 {
     CORO_ASSERT(!co_completed(co), "can't resume a completed coroutine!");
-    co->func(co, co->call_args);
+    co->userdata = userdata;
+    co->func(co, co->userdata, co->call_args);
+    co->userdata = nullptr;
 }
 
 static inline bool _co_sub_call(coro* co)
 {
     if(co->sub_call != nullptr)
     {
-        co_resume(co->sub_call);
+        co_resume(co->sub_call, co->userdata);
         co->waiting = co->sub_call->waiting;
 
         if(co_completed(co->sub_call))
