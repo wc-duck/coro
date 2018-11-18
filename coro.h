@@ -97,6 +97,12 @@ enum
 
 /**
  * Struct keeping state for one coroutine.
+ * 
+ * TODO: this struct is bigger than it need to be, replace pointers with offset on stack
+ *       instead or just store bool for sub_call and size of locals and args and "dig" into
+ *       the stack.
+ *       Making this smaller would mean less stackusage as coro:s for sub-calls are placed
+ *       on the stack.
  */
 struct coro
 {
