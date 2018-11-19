@@ -27,7 +27,11 @@
    Fredrik Kihlander
 */
 
-// TODO: WHAT IS THIS!!!
+/*
+    Small example showing how to implement a really simple "wait"-system ontop of 
+    'coro'.
+    As there is only waiting for timeout here, no more advanced things than this is needed.
+*/
 
 #include "../coro.h"
 #include <stdio.h>
@@ -39,14 +43,9 @@
 
 #include <stdlib.h> // rand()
 
-static void sleep_ms(unsigned int ms)
-{
-#if defined(WIN64) || defined(_WIN64) || defined(WIN32) || defined(_WIN32)
-    SleepEx( ms, false );
-#else
-    usleep( ms * 1000 );
-#endif
-}
+// Define our own co_sleep_ms() that will suspend the thread for x milliseconds.
+#define co_sleep_ms(co, ms) \
+    do { sleep_time = (ms); co_wait(co); } while(0)
 
 static void print_char(char c)
 {
@@ -58,12 +57,18 @@ static unsigned int sleep_time = 0;
 
 void print_line(coro* co, void*, const char** args)
 {
+    // all values are returned as a pointer to the type and a line to print
+    // was passed as argument here.
     const char* line = *args;
 
+    // declare loacal state to keep track of what char to print next.
     co_declare_locals(co,
+        // init to 8... it just so happens that name + indent is 8 chars ;)
         int curr_char = 8;
     );
 
+    // mark the begining of the coro-functions executing code. This is required
+    // by the 'coro' system... and must be matched by a co_end().
     co_begin(co);
 
     printf("%.8s", line);
@@ -72,8 +77,8 @@ void print_line(coro* co, void*, const char** args)
     {
         print_char(line[locals.curr_char++]);
 
-        sleep_time = 30 + rand() % 150;
-        co_wait(co);
+        // suspend the coroutine and have the outside system wait for x milliseconds!
+        co_sleep_ms(co, 30 + rand() % 150);
     }
     print_char('\n');
     co_end(co);
@@ -87,6 +92,7 @@ struct print_dialog_arg
 
 void print_dialog(coro* co, void*, print_dialog_arg* args)
 {
+    // declare locals to keep track of current line.
     co_declare_locals(co,
         size_t curr_line = 0;
     );
@@ -95,10 +101,11 @@ void print_dialog(coro* co, void*, print_dialog_arg* args)
 
     while(locals.curr_line != args->line_cnt)
     {
+        // for each line, call a sub-coro-function with the line to print as argument.
         co_call(co, (co_func)print_line, args->lines[locals.curr_line++]);
 
-        sleep_time = 500 + rand() % 200;
-        co_wait(co);
+        // sleep coroutine for x milliseconds between each line.
+        co_sleep_ms(co, 500 + rand() % 200);
     }
 
     co_end(co);
@@ -128,12 +135,22 @@ int main(int, const char**)
     coro co;
     co_init(&co, stack, sizeof(stack), (co_func)print_dialog, dialog_args);
 
+    // run until the top-level coroutine has completed... i.e. all lines was printed.
     while(!co_completed(&co))
     {
+        // resume will resume execution where the coroutine left of!
         co_resume(&co, nullptr);
 
+        // since we only have one system that can wait() our coroutines in this example,
+        // and that is sleep, sleep if waiting ;)
         if(co_waiting(&co))
-            sleep_ms(sleep_time);
+        {
+            #if defined(WIN64) || defined(_WIN64) || defined(WIN32) || defined(_WIN32)
+                SleepEx( sleep_time, false );
+            #else
+                usleep( sleep_time * 1000 );
+            #endif
+        }
     }
 
     return 0;
