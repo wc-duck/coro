@@ -28,9 +28,129 @@
 */
 
 /**
- * About and usage here.
+ * This is a small header/library implementing coroutines/protothreads/"yieldable functions"
+ * or whatever you want to call it. Initial idea comest from here:
  * 
- * -- one section about waits and co_wait() --
+ * https://www.chiark.greenend.org.uk/~sgtatham/coroutines.html
+ * 
+ * 
+ * BASICS:
+ * 
+ * To make a function yieldable that function will need to be a 'co_func' and contain
+ * a co_begin()/co_end(co)-pair. I.e.
+ * 
+ * void my_coroutine(coro* co, void*, void*)
+ * {
+ *     co_begin(co);
+ * 
+ *     co_end(co);
+ * }
+ * 
+ * And to run that one instance of struct coro need to be created either on stack or
+ * dynamically. To then run the function use co_resume() and check for completion with
+ * co_completed()
+ * 
+ * void run_it()
+ * {
+ *     coro co;
+ *     co_init(&co, nullptr, 0, my_coroutine);
+ * 
+ *     while(!co_completed(&co))
+ *         co_resume(&co, nullptr);
+ * }
+ * 
+ * 
+ * YIELD-POINTS:
+ * 
+ * "yield-points" are points in a coroutine where execution might yield and continue from
+ * on the next call to co_resume().
+ * Yield-points are introduced by co_yield(), co_wait() and co_call().
+ * 
+ * 
+ * LOCAL VARIABLES:
+ * 
+ * Local varibles in coroutine-functions are a bit tricky since the coroutine callback 
+ * will be called over and over again, all local variables will be re-initialized at each
+ * entry. The solution here is to use co_declare_locals(). But for this to work a stack need
+ * to be accociated with the coroutine.
+ * This stack can be allocated in any way as long as it is valid for the entire runtime of
+ * the coroutine.
+ * void my_coroutine(coro* co, void*, void*)
+ * {
+ *     co_declare_locals(co, 
+ *         int var1 = 0;
+ *         float var2 = 13.37f;
+ *     );
+ *     co_begin(co);
+ * 
+ *     // use locals.var1 or locals.var2
+ * 
+ *     co_end(co);
+ * }
+ * 
+ * void run_it()
+ * {
+ *     uint8_t stack[256];
+ *     coro co;
+ *     co_init(&co, stack, sizeof(stack), my_coroutine);
+ * 
+ *     while(!co_completed(&co))
+ *         co_resume(&co, nullptr);
+ * }
+ * 
+ * the locals declared will be pointing to the same position in the stack at each call
+ * so these will be modifiable by the coroutine at will.
+ * 
+ * 
+ * CALLING OTHER YIELDABLE FUNCTIONS:
+ * 
+ * When providing a stack to the coroutine you can also call other yieldable functions
+ * from your coroutine with co_call().
+ * 
+* void my_sub_coroutine(coro* co, void*, void*)
+ * {
+ *     co_begin(co);
+ * 
+ *     // ... do stuff here ...
+ * 
+ *     co_end(co);
+ * }
+ * 
+ * void my_coroutine(coro* co, void*, void*)
+ * {
+ *     co_begin(co);
+ * 
+ *     co_call(co, my_sub_coroutine);
+ * 
+ *     co_end(co);
+ * }
+ * 
+ * The coroutine called by co_call() can now yield etc and is now the part of the code
+ * that controlls the state of the stack of sub-calls until it exits.
+ * 
+ * 
+ * ARGUMENTS:
+ * 
+ * both co_init() and co_call() supports arguments as well, these arguments will be passed
+ * on the stack via the last argument to co_func.
+ * 
+ * The arguments will be residing on the stack until the called function has completed so
+ * it is valid to write to arguments if needed.
+ * 
+ * Observe that arguments are copied with memcpy and no destructors are run on them!
+ * 
+ * 
+ * COROUTINES AND WAITS:
+ * In many cases you might want coroutines that are 'waiting', i.e. suspended until some
+ * event occurs, such as a timeout or operation-x completed.
+ * 
+ * However since these waits and updates of coroutines are outside the scope of this lib
+ * and nothing I can/want to dictate how it should work it will only provide one function 
+ * to help out with that and let the user build something around it with this lib as a 
+ * building-block.
+ * That function is co_wait(). co_wait() is basically a co_yield() but it will flag the
+ * coroutine and all its parent-coroutines and 'waiting' ( to be checked with co_waiting() ).
+ * This flag will be cleared at the next call to co_resume().
  */
 
 #pragma once
@@ -78,6 +198,20 @@
 
 /**
  * Signature used by all coroutine-callbacks.
+ * 
+ * These functions must follow this pattern
+ * 
+ * void my_func(coro* co, void* userdata, void* arg )
+ * {
+ *     // start with declaring locals, this is optional
+ *     co_declare_locals(co, ...);
+ * 
+ *     co_begin(co); // required!
+ * 
+ *     // ... code for coroutine goes here! ...
+ * 
+ *     co_end(co); // required!
+ * }
  * 
  * @param co state of current coroutine call, use with all other co_**** functions/macros.
  * @param userdata passed to co_resume() at the top-level.
