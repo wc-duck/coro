@@ -233,6 +233,78 @@ TEST coro_with_args_in_subcall()
     return 0;
 }
 
+int coro_yield_without_braces()
+{
+    uint8_t stack[1024];
+    coro co;
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
+        co_declare_locals(co,
+            int cnt = 0;
+        );
+        co_begin(co);
+
+        while(true)
+        {
+            if(locals.cnt++ != 2)
+                co_yield(co);
+            else
+                break;
+        }
+
+        co_end(co);
+    });
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_completed(&co));
+    ASSERT(!co_waiting(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_completed(&co));
+    ASSERT(!co_waiting(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(co_completed(&co));
+    ASSERT(!co_waiting(&co));
+
+    return 0;
+}
+
+int coro_wait_without_braces()
+{
+    uint8_t stack[1024];
+    coro co;
+    co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
+        co_declare_locals(co,
+            int cnt = 0;
+        );
+        co_begin(co);
+
+        while(true)
+        {
+            if(locals.cnt++ != 2)
+                co_wait(co);
+            else
+                break;
+        }
+
+        co_end(co);
+    });
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_completed(&co));
+    ASSERT(co_waiting(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_completed(&co));
+    ASSERT(co_waiting(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(co_completed(&co));
+    ASSERT(!co_waiting(&co));
+
+    return 0;
+}
+
 // TODO: add test fetching args before declaring locals!!!
 
 GREATEST_SUITE( coro_tests )
@@ -242,6 +314,8 @@ GREATEST_SUITE( coro_tests )
     RUN_TEST( coro_sub_call );
     RUN_TEST( coro_with_args );
     RUN_TEST( coro_with_args_in_subcall );
+    RUN_TEST( coro_yield_without_braces );
+    RUN_TEST( coro_wait_without_braces );
 }
 
 GREATEST_MAIN_DEFS();

@@ -385,11 +385,10 @@ static inline bool _co_sub_call(coro* co)
     co->state = CORO_STATE_COMPLETED
 
 #define co_yield(co) \
-    do{ co->state = __LINE__; return; } while(0); case __LINE__:
+    do { co->state = __LINE__; return; case __LINE__: {} } while(0)
 
 #define co_wait(co) \
-    co->waiting = 1; \
-    co_yield(co);
+    do { co->waiting = 1; co_yield(co); } while(0)
 
 static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {
@@ -411,7 +410,7 @@ static inline bool _co_call(coro* co, co_func to_call)
 
 #define co_call(co, to_call, ...) \
     if(_co_call(co, to_call, ##__VA_ARGS__)) \
-        { co_yield(co); }
+        co_yield(co);
 
 template< typename T >
 static inline T* _co_declare_locals(coro* co)
