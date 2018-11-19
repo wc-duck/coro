@@ -333,9 +333,15 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 #define co_begin(co)
 
 /**
- * Begin coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
+ * End coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
  */
 #define co_end(co)
+
+/**
+ * Early termiation of the current coroutine. This will be the same as the function
+ * reaching co_end()
+ */
+#define co_exit(co)
 
 /**
  * Yield execution of coroutine, coroutine will be continued after co_yeald() at the next co_resume()
@@ -407,6 +413,7 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 
 #undef co_begin
 #undef co_end
+#undef co_exit
 #undef co_yield
 #undef co_wait
 #undef co_call
@@ -514,9 +521,12 @@ static inline bool _co_sub_call(coro* co)
     {                    \
         default:
 
+#define co_exit(co) \
+    do{ co->state = CORO_STATE_COMPLETED; return; } while(0)
+
 #define co_end(co) \
     }              \
-    co->state = CORO_STATE_COMPLETED
+    co_exit(co)
 
 #define co_yield(co) \
     do { co->state = __LINE__; return; case __LINE__: {} } while(0)

@@ -305,7 +305,54 @@ int coro_wait_without_braces()
     return 0;
 }
 
-// TODO: add test fetching args before declaring locals!!!
+int coro_early_exit()
+{
+    coro co;
+    co_init(&co, nullptr, 0, [](coro* co, void* userdata, void*) {
+        int* test = (int*)userdata;
+
+        co_begin(co);
+
+        *test = 1; co_yield(co);
+        *test = 2; co_yield(co);
+        *test = 3; co_exit(co);
+        *test = 4; co_yield(co);
+
+        co_end(co);
+    });
+
+    int test = 0;
+
+    while(!co_completed(&co))
+        co_resume(&co, &test);
+
+    ASSERT_EQ(3, test);
+    return 0;
+}
+
+int coro_early_exit_without_braces()
+{
+    coro co;
+    co_init(&co, nullptr, 0, [](coro* co, void* userdata, void*) {
+        int* test = (int*)userdata;
+
+        co_begin(co);
+
+        while(true)
+            if(++(*test) == 3)
+                co_exit(co);
+
+        co_end(co);
+    });
+
+    int test = 0;
+
+    while(!co_completed(&co))
+        co_resume(&co, &test);
+
+    ASSERT_EQ(3, test);
+    return 0;
+}
 
 GREATEST_SUITE( coro_tests )
 {
@@ -316,6 +363,8 @@ GREATEST_SUITE( coro_tests )
     RUN_TEST( coro_with_args_in_subcall );
     RUN_TEST( coro_yield_without_braces );
     RUN_TEST( coro_wait_without_braces );
+    RUN_TEST( coro_early_exit );
+    RUN_TEST( coro_early_exit_without_braces );
 }
 
 GREATEST_MAIN_DEFS();
