@@ -71,16 +71,17 @@
  * 
  * Local varibles in coroutine-functions are a bit tricky since the coroutine callback 
  * will be called over and over again, all local variables will be re-initialized at each
- * entry. The solution here is to use co_declare_locals(). But for this to work a stack need
- * to be accociated with the coroutine.
+ * entry. The solution here is to use co_locals_begin()/co_locals_end(). But for this to 
+ * work a stack need to be accociated with the coroutine.
  * This stack can be allocated in any way as long as it is valid for the entire runtime of
  * the coroutine.
  * void my_coroutine(coro* co, void*, void*)
  * {
- *     co_declare_locals(co, 
+ *     co_locals_begin(co);
  *         int var1 = 0;
  *         float var2 = 13.37f;
- *     );
+ *     co_locals_end(co);
+ * 
  *     co_begin(co);
  * 
  *     // use locals.var1 or locals.var2
@@ -166,7 +167,7 @@
 
 /**
  * Define CORO_LOCALS_NAME to configure name of variable declared
- * by co_declare_locals()
+ * by co_locals_begin()/co_locals_end()
  * Defaults to 'locals'
  */
 #if !defined(CORO_LOCALS_NAME)
@@ -204,7 +205,9 @@
  * void my_func(coro* co, void* userdata, void* arg )
  * {
  *     // start with declaring locals, this is optional
- *     co_declare_locals(co, ...);
+ *     co_locals_begin(co)
+ *     // ...
+ *     co_locals_end(co)
  * 
  *     co_begin(co); // required!
  * 
@@ -327,8 +330,8 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 /**
  * Begin coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
  * 
- * @note if a co_func uses co_declare_locals() this is required to be called BEFORE
- *       co_begin().
+ * @note if a co_func uses co_locals_begin()/co_locals_end() this is required to be called 
+ *       BEFORE co_begin().
  */
 #define co_begin(co)
 
@@ -388,10 +391,10 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
  * 
  * void my_coroutine( coro* co )
  * {
- *    co_declare_locals(co,
+ *    co_locals_begin(co);
  *      int my_local_int = 1;
  *      float my_local_float = 13.37f;
- *    );
+ *    co_locals_end(co);
  * 
  *    co_begin();
  * 
@@ -402,7 +405,8 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
  * 
  * @note ADD NOTE ABOUT IMPLEMENTATION to know the limitations.
  */
-#define co_declare_locals(co, locals)
+#define co_locals_begin(co)
+#define co_locals_end(co)
 
 
 
@@ -417,7 +421,8 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 #undef co_yield
 #undef co_wait
 #undef co_call
-#undef co_declare_locals
+#undef co_locals_begin
+#undef co_locals_end
 
 static inline void* _co_stack_alloc(coro* co, size_t size, size_t align)
 {
@@ -552,24 +557,22 @@ static inline bool _co_call(coro* co, co_func to_call)
    return _co_call(co, to_call, nullptr, 0, 0);
 }
 
-#define co_call(co, to_call, ...) \
+#define co_call(co, to_call, ...)            \
     if(_co_call(co, to_call, ##__VA_ARGS__)) \
         co_yield(co);
 
-template< typename T >
-static inline T* _co_declare_locals(coro* co)
-{
-    if(co->call_locals == nullptr)
+#define co_locals_begin(co) \
+    struct _co_locals       \
     {
-        co->call_locals = _co_stack_alloc(co, sizeof(T), alignof(T));
-        new (co->call_locals) T;
-    }
-    return (T*)co->call_locals;
-}
 
-#define co_declare_locals(co, locals) \
-    struct _co_locals                 \
-    {                                 \
-        locals                        \
-    };                                \
-    _co_locals& CORO_LOCALS_NAME = *_co_declare_locals<_co_locals>(co);
+#define co_locals_end(co)                                           \
+    };                                                              \
+    if(co->call_locals == nullptr)                                  \
+    {                                                               \
+        co->call_locals = _co_stack_alloc( co,                      \
+                                           sizeof(_co_locals),      \
+                                           alignof(_co_locals)) ;   \
+        new (co->call_locals) _co_locals;                           \
+    }                                                               \
+    _co_locals& CORO_LOCALS_NAME = *((_co_locals*)co->call_locals);
+

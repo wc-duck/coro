@@ -38,9 +38,10 @@ TEST coro_basic()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
-        co_declare_locals(co,
+        co_locals_begin(co);
             int cnt = 0;
-        );
+        co_locals_end(co);
+
         co_begin(co);
 
         while((locals.cnt++) < 2)
@@ -114,18 +115,19 @@ TEST coro_sub_call()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co, void* userdata, void*){
-        co_declare_locals(co,
+        co_locals_begin(co);
             int cnt = 0;
-        );
+        co_locals_end(co);
+
         co_begin(co);
 
         for(; locals.cnt < 2; ++locals.cnt)
         {
             ++((test_state*)userdata)->coro_sub_call_loop;
             co_call(co, [](coro* co, void* userdata, void*){
-                co_declare_locals(co,
+                co_locals_begin(co);
                     unsigned int cnt = 0;
-                );
+                co_locals_end(co);
 
                 co_begin(co);
 
@@ -200,9 +202,10 @@ TEST coro_with_args_in_subcall()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
-        co_declare_locals(co,
+        co_locals_begin(co);
             int cnt = 0;
-        );
+        co_locals_end(co);
+
         co_begin(co);
 
         for(; locals.cnt < 2; ++locals.cnt)
@@ -238,9 +241,10 @@ int coro_yield_without_braces()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
-        co_declare_locals(co,
+        co_locals_begin(co);
             int cnt = 0;
-        );
+        co_locals_end(co);
+
         co_begin(co);
 
         while(true)
@@ -274,9 +278,10 @@ int coro_wait_without_braces()
     uint8_t stack[1024];
     coro co;
     co_init(&co, stack, sizeof(stack), [](coro* co, void*, void*) {
-        co_declare_locals(co,
+        co_locals_begin(co);
             int cnt = 0;
-        );
+        co_locals_end(co);
+
         co_begin(co);
 
         while(true)

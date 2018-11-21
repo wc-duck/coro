@@ -62,10 +62,10 @@ void print_line(coro* co, void*, const char** args)
     const char* line = *args;
 
     // declare loacal state to keep track of what char to print next.
-    co_declare_locals(co,
+    co_locals_begin(co);
         // init to 8... it just so happens that name + indent is 8 chars ;)
         int curr_char = 8;
-    );
+    co_locals_end(co);
 
     // mark the begining of the coro-functions executing code. This is required
     // by the 'coro' system... and must be matched by a co_end().
@@ -93,9 +93,9 @@ struct print_dialog_arg
 void print_dialog(coro* co, void*, print_dialog_arg* args)
 {
     // declare locals to keep track of current line.
-    co_declare_locals(co,
+    co_locals_begin(co);
         size_t curr_line = 0;
-    );
+    co_locals_end(co);
 
     co_begin(co);
 
