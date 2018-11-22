@@ -27,7 +27,7 @@
    Fredrik Kihlander
 */
 
-#define CORO_TRACK_MAX_STACK_USAGE 0
+#define CORO_TRACK_MAX_STACK_USAGE 1
 
 #include "greatest.h"
 #include "../coro.h"

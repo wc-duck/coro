@@ -251,9 +251,9 @@ struct coro
     uint8_t*   stack_top    {nullptr};
     uint8_t*   stack        {nullptr};
 
-    coro*      sub_call     {nullptr};
-    void*      call_locals  {nullptr};
-    void*      call_args    {nullptr};
+    uint32_t   sub_call     {0xFFFFFFFF};
+    uint32_t   call_locals  {0xFFFFFFFF};
+    uint32_t   call_args    {0xFFFFFFFF};
     void*      userdata     {nullptr};
 
 #if CORO_TRACK_MAX_STACK_USAGE
@@ -447,6 +447,16 @@ static inline void _co_stack_rewind(coro* co, void* ptr)
     co->stack_top = (uint8_t*)ptr;
 }
 
+static inline uint32_t _co_ptr_to_stack_offset(coro* co, void* ptr)
+{
+    return (uint32_t)((uint8_t*)ptr - co->stack);
+}
+
+static inline void* _co_stack_offset_to_ptr(coro* co, uint32_t offset)
+{
+    return co->stack + offset;
+}
+
 static inline void co_init( coro*   co,
                             void*   stack,
                             int     stack_size,
@@ -463,9 +473,9 @@ static inline void co_init( coro*   co,
     co->stack_top  = (uint8_t*)stack;
     co->stack_size = stack_size;
 
-    co->sub_call    = nullptr;
-    co->call_locals = nullptr;
-    co->call_args   = nullptr;
+    co->sub_call    = 0xFFFFFFFF;
+    co->call_locals = 0xFFFFFFFF;
+    co->call_args   = 0xFFFFFFFF;
     co->userdata    = nullptr;
 
 #if CORO_TRACK_MAX_STACK_USAGE
@@ -475,8 +485,9 @@ static inline void co_init( coro*   co,
     if(arg)
     {
         CORO_ASSERT(stack != nullptr, "can't have arguments to a coroutine without a stack!");
-        co->call_args = _co_stack_alloc(co, (size_t)arg_size, (size_t)arg_align);
-        memcpy(co->call_args, arg, (size_t)arg_size);
+        void* call_args = _co_stack_alloc(co, (size_t)arg_size, (size_t)arg_align);
+        memcpy(call_args, arg, (size_t)arg_size);
+        co->call_args = _co_ptr_to_stack_offset(co, call_args);
     }
 }
 
@@ -499,24 +510,25 @@ static inline void co_resume(coro* co, void* userdata)
     CORO_ASSERT(!co_completed(co), "can't resume a completed coroutine!");
     co->waiting = 0;
     co->userdata = userdata;
-    co->func(co, co->userdata, co->call_args);
+    co->func(co, co->userdata, _co_stack_offset_to_ptr(co, co->call_args));
     co->userdata = nullptr;
 }
 
 static inline bool _co_sub_call(coro* co)
 {
-    if(co->sub_call != nullptr)
+    if(co->sub_call != 0xFFFFFFFF)
     {
-        co_resume(co->sub_call, co->userdata);
-        co->waiting = co->sub_call->waiting;
+        coro* sub_call = (coro*)_co_stack_offset_to_ptr(co, co->sub_call);
+        co_resume(sub_call, co->userdata);
+        co->waiting = sub_call->waiting;
 
-        if(co_completed(co->sub_call))
+        if(co_completed(sub_call))
         {
-            _co_stack_rewind(co, co->sub_call);
-            co->sub_call = nullptr;
+            _co_stack_rewind(co, sub_call);
+            co->sub_call = 0xFFFFFFFF;
         }
     }
-    return co->sub_call != nullptr;
+    return co->sub_call != 0xFFFFFFFF;
 }
 
 #define co_begin(co)     \
@@ -541,8 +553,9 @@ static inline bool _co_sub_call(coro* co)
 
 static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {
-    co->sub_call = (coro*)_co_stack_alloc(co, sizeof(coro), alignof(coro));
-    co_init(co->sub_call, co->stack_top, (int)(co->stack_size - (co->stack_top - co->stack)), to_call, arg, arg_size, arg_align);
+    coro* sub_call = (coro*)_co_stack_alloc(co, sizeof(coro), alignof(coro));
+    co_init(sub_call, co->stack_top, (int)(co->stack_size - (co->stack_top - co->stack)), to_call, arg, arg_size, arg_align);
+    co->sub_call = _co_ptr_to_stack_offset(co, sub_call);
     return _co_sub_call(co);
 }
 
@@ -567,12 +580,13 @@ static inline bool _co_call(coro* co, co_func to_call)
 
 #define co_locals_end(co)                                           \
     };                                                              \
-    if(co->call_locals == nullptr)                                  \
+    if(co->call_locals == 0xFFFFFFFF)                               \
     {                                                               \
-        co->call_locals = _co_stack_alloc( co,                      \
-                                           sizeof(_co_locals),      \
-                                           alignof(_co_locals)) ;   \
-        new (co->call_locals) _co_locals;                           \
+        void* call_locals = _co_stack_alloc( co,                    \
+                                             sizeof(_co_locals),    \
+                                             alignof(_co_locals));  \
+        new (call_locals) _co_locals;                               \
+        co->call_locals = _co_ptr_to_stack_offset(co, call_locals); \
     }                                                               \
-    _co_locals& CORO_LOCALS_NAME = *((_co_locals*)co->call_locals);
+    _co_locals& CORO_LOCALS_NAME = *((_co_locals*)_co_stack_offset_to_ptr(co, co->call_locals)); \
 
