@@ -152,6 +152,15 @@
  * That function is co_wait(). co_wait() is basically a co_yield() but it will flag the
  * coroutine and all its parent-coroutines and 'waiting' ( to be checked with co_waiting() ).
  * This flag will be cleared at the next call to co_resume().
+ * 
+ * 
+ * RUNNING OUT OF STACK
+ * 
+ * If your coroutine is running out of stackspace the coroutine will yield and co_stack_overflowed()
+ * will return true. If this is detected you are free to handle this how you want.
+ * - Call co_replace_stack() to grow the stack and run co_resume() again?
+ * - ASSERT()?
+ * - something else ;)
  */
 
 #pragma once
@@ -263,7 +272,10 @@ struct coro
 {
     _coro_call_state call;
 
-    uint32_t   waiting : 1;
+    uint32_t   waiting   : 1;
+    uint32_t   overflow  : 1;
+    uint32_t   overflow_in_call  : 1;
+    uint32_t   executing : 1;
 
     int        stack_size   {0};
     uint8_t*   stack_top    {nullptr};
@@ -330,16 +342,32 @@ static inline void co_init( coro* co, void* stack, int stack_size, co_func func,
  */
 static inline void co_resume( coro* co, void* userdata );
 
-
 /**
  * Returns true if the coroutine has completed.
  */
 static inline bool co_completed( coro* co ) { return co->call.state == CORO_STATE_COMPLETED; }
 
 /**
+ * Return true if the coroutine overflowed the stack at the last co_resume(), flag
+ * will be cleared at the next call to co_resume() and set again if the stack hasn't grown!
+ */
+static inline bool co_stack_overflowed( coro* co ) { return co->overflow == 1; }
+
+/**
  * Returns true if the coroutine or any sub-coroutine has yielded via co_wait()
  */
 static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
+
+/**
+ * Return the amount of bytes currently used by the stack of the coro, -1 if the coro
+ * has no stack.
+ */
+static inline int co_stack_usage( coro* co );
+
+/**
+ * Replace the stack of the coroutine with a new one, will assert if co_stack_usage(co) > stack_size.
+ */
+static inline void* co_replace_stack( coro* co, void* stack, int stack_size );
 
 /**
  * Begin coroutine, the system expects a matching co_begin()/co_end() pair in a co_func.
@@ -438,19 +466,32 @@ static inline bool co_waiting( coro* co ) { return co->waiting == 1; }
 #undef co_locals_begin
 #undef co_locals_end
 
+static inline int co_stack_usage( coro* co )
+{
+    coro* root = co->call.root;
+    if(root->stack == nullptr)
+        return -1;
+    return (int)(root->stack_top - root->stack);
+}
+
 static inline void* _co_stack_alloc(_coro_call_state* call, size_t size, size_t align)
 {
     coro* co = call->root;
 
     // align up!
     uint8_t* ptr = (uint8_t*)( ( (uintptr_t)co->stack_top + ( (uintptr_t)align - 1 ) ) & ~( (uintptr_t)align - 1 ) );
+    uint8_t* top = ptr + size;
 
-    co->stack_top = ptr + size;
+    if(top > co->stack + co->stack_size)
+    {
+        co->overflow = 1;
+        return nullptr;
+    }
 
-    CORO_ASSERT(co->stack_top <= co->stack + co->stack_size, "Stack overflow in coro!");
+    co->stack_top = top;
 
 #if CORO_TRACK_MAX_STACK_USAGE
-    int stack_use = (int)(co->stack_top - co->stack);
+    int stack_use = co_stack_usage(co);
     co->stack_use_max = stack_use > co->stack_use_max ? stack_use : co->stack_use_max;
 #endif
 
@@ -491,8 +532,11 @@ static inline void _co_init_call_state( _coro_call_state* call,
     {
         CORO_ASSERT(call->root->stack != nullptr, "can't have arguments to a coroutine without a stack!");
         void* call_args = _co_stack_alloc(call, (size_t)arg_size, (size_t)arg_align);
-        memcpy(call_args, arg, (size_t)arg_size);
-        call->call_args = _co_ptr_to_stack_offset(call, call_args);
+        if(call_args != nullptr)
+        {
+            memcpy(call_args, arg, (size_t)arg_size);
+            call->call_args = _co_ptr_to_stack_offset(call, call_args);
+        }
     }
 }
 
@@ -505,6 +549,8 @@ static inline void co_init( coro*   co,
                             int     arg_align )
 {
     co->waiting    = 0;
+    co->overflow   = 0;
+    co->executing  = 0;
     co->stack      = (uint8_t*)stack;
     co->stack_top  = (uint8_t*)stack;
     co->stack_size = stack_size;
@@ -515,6 +561,7 @@ static inline void co_init( coro*   co,
 #endif
 
     _co_init_call_state(&co->call, co, func, arg, arg_size, arg_align);
+    CORO_ASSERT(co->overflow == 0, "Out of stack when allocating data for argument in co_init(), can't handle out of stack in a good way here!");
 }
 
 static inline void co_init( coro*   co,
@@ -539,10 +586,14 @@ static inline void _co_invoke_callback(_coro_call_state* call)
 static inline void co_resume(coro* co, void* userdata)
 {
     CORO_ASSERT(!co_completed(co), "can't resume a completed coroutine!");
-    co->waiting = 0;
-    co->userdata = userdata;
+    co->waiting   = 0;
+    co->overflow  = 0;
+    co->overflow_in_call = 0;
+    co->executing = 1;
+    co->userdata  = userdata;
     _co_invoke_callback(&co->call);
-    co->userdata = nullptr;
+    co->userdata  = nullptr;
+    co->executing = 0;
 }
 
 static inline bool _co_sub_call(_coro_call_state* call)
@@ -559,6 +610,23 @@ static inline bool _co_sub_call(_coro_call_state* call)
         }
     }
     return call->sub_call != 0xFFFFFFFF;
+}
+
+static inline void* co_replace_stack( coro* co, void* stack, int stack_size )
+{
+    coro* root = co->call.root;
+    int stack_usage = co_stack_usage(co);
+    CORO_ASSERT(root->executing == 0, "Can't replace stack when executing!");
+    CORO_ASSERT(stack_usage <= stack_size, "Shrinking stack to less size than current usage!");
+
+    uint8_t* old_stack = root->stack;
+
+    memcpy(stack, old_stack, (size_t)stack_usage);
+    root->stack      = (uint8_t*)stack;
+    root->stack_top  = (uint8_t*)stack + stack_usage;
+    root->stack_size = stack_size;
+
+    return old_stack;
 }
 
 #define co_begin(co)            \
@@ -584,7 +652,14 @@ static inline bool _co_sub_call(_coro_call_state* call)
 static inline bool _co_call(coro* co, co_func to_call, void* arg, int arg_size, int arg_align )
 {
     _coro_call_state* sub_call = (_coro_call_state*)_co_stack_alloc(&co->call, sizeof(_coro_call_state), alignof(_coro_call_state));
-    _co_init_call_state(sub_call, co->call.root, to_call, arg, arg_size, arg_align);
+    if(sub_call != nullptr)
+        _co_init_call_state(sub_call, co->call.root, to_call, arg, arg_size, arg_align);
+
+    if(co_stack_overflowed(co))
+    {
+        co->call.root->overflow_in_call = 1;
+        return true;
+    }
     co->call.sub_call = _co_ptr_to_stack_offset(&co->call, sub_call);
     return _co_sub_call(&co->call);
 }
@@ -595,14 +670,22 @@ static inline bool _co_call(coro* co, co_func to_call, T& arg )
     return _co_call(co, to_call, &arg, sizeof(T), alignof(T));
 }
 
+
 static inline bool _co_call(coro* co, co_func to_call)
 {
    return _co_call(co, to_call, nullptr, 0, 0);
 }
 
-#define co_call(co, to_call, ...)            \
-    if(_co_call(co, to_call, ##__VA_ARGS__)) \
-        co_yield(co);
+#define co_call(co, to_call, ...)                \
+    do{                                          \
+        co->call.state = __LINE__ + 100000;      \
+        if(_co_call(co, to_call, ##__VA_ARGS__)) \
+        {                                        \
+            if(co->call.root->overflow_in_call)  \
+                return;                          \
+            co_yield(co);                        \
+        }                                        \
+    } while(0)
 
 #define co_locals_begin(co) \
     struct _co_locals       \
@@ -615,6 +698,8 @@ static inline bool _co_call(coro* co, co_func to_call)
         void* call_locals = _co_stack_alloc( &co->call,                         \
                                              sizeof(_co_locals),                \
                                              alignof(_co_locals));              \
+        if(call_locals == nullptr)                                              \
+            return;                                                             \
         new (call_locals) _co_locals;                                           \
         co->call.call_locals = _co_ptr_to_stack_offset(&co->call, call_locals); \
     }                                                                           \

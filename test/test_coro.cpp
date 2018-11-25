@@ -27,7 +27,7 @@
    Fredrik Kihlander
 */
 
-#define CORO_TRACK_MAX_STACK_USAGE 1
+#define CORO_TRACK_MAX_STACK_USAGE 0
 
 #include "greatest.h"
 #include "../coro.h"
@@ -359,6 +359,191 @@ int coro_early_exit_without_braces()
     return 0;
 }
 
+static void alloc_140_bytes(coro* co, void*, void*)
+{
+    co_locals_begin(co);
+        uint8_t dauta[140];
+    co_locals_end(co);
+
+    co_begin(co);
+        for(int i = 0; i < (int)sizeof(locals.dauta); ++i)
+            locals.dauta[i] = (uint8_t)i;
+
+        co_yield(co);
+
+        for(int i = 0; i < (int)sizeof(locals.dauta); ++i)
+            assert(locals.dauta[i] == i);
+
+    co_end(co);
+}
+
+int coro_stack_overflow_locals()
+{
+    uint8_t stack1[128];
+    uint8_t stack2[256];
+
+    coro co;
+    co_init(&co, stack1, sizeof(stack1), alloc_140_bytes);
+
+    co_resume(&co, nullptr);
+    ASSERT(co_stack_overflowed(&co));
+
+    ASSERT_EQ(stack1, co_replace_stack(&co, stack2, sizeof(stack2)));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(!co_completed(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(co_completed(&co));
+
+    return 0;
+}
+
+int coro_stack_overflow_locals_in_call()
+{
+    uint8_t stack1[128];
+    uint8_t stack2[256];
+
+    coro co;
+    co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void*)
+    {
+        co_begin(co);
+            co_call(co, alloc_140_bytes);
+        co_end(co);
+
+    });
+
+    co_resume(&co, nullptr);
+    ASSERT(co_stack_overflowed(&co));
+
+    ASSERT_EQ(stack1, co_replace_stack(&co, stack2, sizeof(stack2)));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(!co_completed(&co));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(co_completed(&co));
+
+    return 0;
+}
+
+int coro_stack_overflow_args_in_co_call()
+{
+    struct test_arg
+    {
+        uint8_t data[80];
+    } the_arg;
+
+    for(int i = 0; i < (int)sizeof(the_arg.data); ++i)
+        the_arg.data[i] = (uint8_t)i;
+
+    uint8_t stack1[128];
+    uint8_t stack2[256];
+
+    coro co;
+    co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void* arg){
+        test_arg* arg_ptr = (test_arg*)arg;
+        co_begin(co);
+            co_call(co, [](coro* co, void*, void* arg){
+                test_arg* arg_ptr = (test_arg*)arg;
+                co_begin(co);
+                    for(int i = 0; i < (int)sizeof(arg_ptr->data); ++i)
+                        assert(arg_ptr->data[i] == (uint8_t)i );
+                co_end(co);
+            }, *arg_ptr);
+        co_end(co);
+    }, the_arg);
+
+    co_resume(&co, nullptr);
+    ASSERT(co_stack_overflowed(&co));
+
+    ASSERT_EQ(stack1, co_replace_stack(&co, stack2, sizeof(stack2)));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(co_completed(&co));
+
+    return 0;
+}
+
+static void empty_coro(coro* co, void*, void*)
+{
+    co_begin(co);
+    co_end(co);
+}
+
+int coro_stack_overflow_call()
+{
+    uint8_t stack1[128];
+    uint8_t stack2[256];
+
+    coro co;
+    co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void*){
+        co_locals_begin(co);
+            uint8_t data[sizeof(stack1)]; // filling the stack to the max!
+        co_locals_end(co);
+
+        co_begin(co);
+            (void)locals;
+
+            // this call should make stuff overflow!
+            co_call(co, empty_coro);
+        co_end(co);
+    });
+
+    co_resume(&co, nullptr);
+    ASSERT(co_stack_overflowed(&co));
+    ASSERT(!co_completed(&co));
+
+    ASSERT_EQ(stack1, co_replace_stack(&co, stack2, sizeof(stack2)));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(co_completed(&co));
+
+    return 0;
+}
+
+int coro_stack_overflow_call_in_call()
+{
+    uint8_t stack1[128];
+    uint8_t stack2[256];
+
+    coro co;
+    co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void*){
+        co_begin(co);
+            co_call(co, [](coro* co, void*, void*){
+                co_locals_begin(co);
+                    uint8_t data[sizeof(stack1)]; // filling the stack to the max!
+                co_locals_end(co);
+
+                co_begin(co);
+                    (void)locals;
+
+                    // this call should make stuff overflow!
+                    co_call(co, empty_coro);
+                co_end(co);
+            });
+        co_end(co);
+    });
+
+    co_resume(&co, nullptr);
+    ASSERT(co_stack_overflowed(&co));
+    ASSERT(!co_completed(&co));
+
+    ASSERT_EQ(stack1, co_replace_stack(&co, stack2, sizeof(stack2)));
+
+    co_resume(&co, nullptr);
+    ASSERT(!co_stack_overflowed(&co));
+    ASSERT(co_completed(&co));
+
+    return 0;
+}
+
 GREATEST_SUITE( coro_tests )
 {
 	RUN_TEST( coro_basic );
@@ -370,6 +555,11 @@ GREATEST_SUITE( coro_tests )
     RUN_TEST( coro_wait_without_braces );
     RUN_TEST( coro_early_exit );
     RUN_TEST( coro_early_exit_without_braces );
+    RUN_TEST( coro_stack_overflow_locals );
+    RUN_TEST( coro_stack_overflow_locals_in_call );
+    RUN_TEST( coro_stack_overflow_args_in_co_call );
+    RUN_TEST( coro_stack_overflow_call );
+    RUN_TEST( coro_stack_overflow_call_in_call );
 }
 
 GREATEST_MAIN_DEFS();
