@@ -18,5 +18,5 @@ install:
 script:
   - bam/bam compiler=$CC config=debug
   - bam/bam compiler=$CC config=release
-  - ./local/linux_x86_64/debug/$CC/coro_tests
-  - ./local/linux_x86_64/release/$CC/coro_tests
+  - ./local/debug/linux_x86_64/$CC/coro_tests
+  - ./local/release/linux_x86_64/$CC/coro_tests
