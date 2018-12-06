@@ -512,6 +512,8 @@ static inline uint32_t _co_ptr_to_stack_offset(_coro_call_state* call, void* ptr
 
 static inline void* _co_stack_offset_to_ptr(_coro_call_state* call, uint32_t offset)
 {
+    if(offset == 0xFFFFFFFF)
+        return nullptr;
     return call->root->stack + offset;
 }
 
@@ -621,7 +623,11 @@ static inline void* co_replace_stack( coro* co, void* stack, int stack_size )
 
     uint8_t* old_stack = root->stack;
 
-    memcpy(stack, old_stack, (size_t)stack_usage);
+    if(old_stack)
+        memcpy(stack, old_stack, (size_t)stack_usage);
+    else
+        stack_usage = 0;
+
     root->stack      = (uint8_t*)stack;
     root->stack_top  = (uint8_t*)stack + stack_usage;
     root->stack_size = stack_size;
