@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/wc-duck/coro.svg?branch=master)](https://travis-ci.org/wc-duck/coro)
+
 This is a small header/library implementing coroutines/protothreads/"yieldable functions"
 or whatever you want to call it.
 
