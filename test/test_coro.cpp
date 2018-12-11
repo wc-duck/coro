@@ -478,13 +478,14 @@ static void empty_coro(coro* co, void*, void*)
 
 int coro_stack_overflow_call()
 {
-    uint8_t stack1[128];
-    uint8_t stack2[256];
+    static const size_t stack1_size = 128;
+    uint8_t stack1[stack1_size];
+    uint8_t stack2[stack1_size*2];
 
     coro co;
     co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void*){
         co_locals_begin(co);
-            uint8_t data[sizeof(stack1)]; // filling the stack to the max!
+            uint8_t data[stack1_size]; // filling the stack to the max!
         co_locals_end(co);
 
         co_begin(co);
@@ -510,15 +511,16 @@ int coro_stack_overflow_call()
 
 int coro_stack_overflow_call_in_call()
 {
-    uint8_t stack1[128];
-    uint8_t stack2[256];
+    static const size_t stack1_size = 128;
+    uint8_t stack1[stack1_size];
+    uint8_t stack2[stack1_size*2];
 
     coro co;
     co_init(&co, stack1, sizeof(stack1), [](coro* co, void*, void*){
         co_begin(co);
             co_call(co, [](coro* co, void*, void*){
                 co_locals_begin(co);
-                    uint8_t data[sizeof(stack1)]; // filling the stack to the max!
+                    uint8_t data[stack1_size]; // filling the stack to the max!
                 co_locals_end(co);
 
                 co_begin(co);
