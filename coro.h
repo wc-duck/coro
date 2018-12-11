@@ -351,7 +351,7 @@ static inline bool co_completed( coro* co ) { return co->call.state == CORO_STAT
  * Return true if the coroutine overflowed the stack at the last co_resume(), flag
  * will be cleared at the next call to co_resume() and set again if the stack hasn't grown!
  */
-static inline bool co_stack_overflowed( coro* co ) { return co->overflow == 1; }
+static inline bool co_stack_overflowed( coro* co ) { return co->call.root->overflow == 1; }
 
 /**
  * Returns true if the coroutine or any sub-coroutine has yielded via co_wait()
