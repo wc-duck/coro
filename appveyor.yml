@@ -1,0 +1,16 @@
+platform:
+  - x86
+
+install:
+  - c:\"Program Files (x86)"\"Microsoft Visual Studio 12.0"\VC\vcvarsall.bat
+  - git clone https://github.com/matricks/bam.git
+  - cd bam
+  - make_win64_msvc.bat
+  - cd ..
+  - bam\bam.exe config=debug
+  - bam\bam.exe config=release
+  - local\debug\winx64\msvc\coro_tests.exe
+  - local\release\winx64\msvc\coro_tests.exe
+
+build: off
+
